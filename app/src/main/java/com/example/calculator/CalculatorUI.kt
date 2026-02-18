@@ -1,21 +1,26 @@
 package com.example.calculator
 
 import android.os.Build
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -50,6 +55,44 @@ fun CalculatorScreen(
     state: CalculatorState,
     onAction: (CalculatorAction) -> Unit
 ) {
+    val view = LocalView.current
+    
+    // Add keyboard support
+    DisposableEffect(Unit) {
+        val listener = android.view.View.OnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_0 -> onAction(CalculatorAction.Number(0))
+                    KeyEvent.KEYCODE_1 -> onAction(CalculatorAction.Number(1))
+                    KeyEvent.KEYCODE_2 -> onAction(CalculatorAction.Number(2))
+                    KeyEvent.KEYCODE_3 -> onAction(CalculatorAction.Number(3))
+                    KeyEvent.KEYCODE_4 -> onAction(CalculatorAction.Number(4))
+                    KeyEvent.KEYCODE_5 -> onAction(CalculatorAction.Number(5))
+                    KeyEvent.KEYCODE_6 -> onAction(CalculatorAction.Number(6))
+                    KeyEvent.KEYCODE_7 -> onAction(CalculatorAction.Number(7))
+                    KeyEvent.KEYCODE_8 -> onAction(CalculatorAction.Number(8))
+                    KeyEvent.KEYCODE_9 -> onAction(CalculatorAction.Number(9))
+                    KeyEvent.KEYCODE_PERIOD -> onAction(CalculatorAction.Decimal)
+                    KeyEvent.KEYCODE_PLUS -> onAction(CalculatorAction.Operation(CalculatorOperation.Add))
+                    KeyEvent.KEYCODE_MINUS -> onAction(CalculatorAction.Operation(CalculatorOperation.Subtract))
+                    KeyEvent.KEYCODE_STAR -> onAction(CalculatorAction.Operation(CalculatorOperation.Multiply))
+                    KeyEvent.KEYCODE_SLASH -> onAction(CalculatorAction.Operation(CalculatorOperation.Divide))
+                    KeyEvent.KEYCODE_ENTER -> onAction(CalculatorAction.Calculate)
+                    KeyEvent.KEYCODE_DEL -> onAction(CalculatorAction.Delete)
+                    KeyEvent.KEYCODE_C -> onAction(CalculatorAction.Clear)
+                    else -> return@OnKeyListener false
+                }
+                true
+            } else {
+                false
+            }
+        }
+        view.setOnKeyListener(listener)
+        onDispose {
+            view.setOnKeyListener(null)
+        }
+    }
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -62,6 +105,24 @@ fun CalculatorScreen(
                 .align(Alignment.BottomCenter),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Memory Display
+            if(state.memory != 0.0) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Memory: ${if (state.memory % 1.0 == 0.0) state.memory.toLong() else state.memory}",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            
             // Display Area
             Text(
                 text = state.number1 + (state.operation?.symbol ?: "") + state.number2,
@@ -78,20 +139,24 @@ fun CalculatorScreen(
 
             // Button Grid
             val buttons = listOf(
-                "AC", "⌫", "", "÷",
-                "7", "8", "9", "×",
-                "4", "5", "6", "-",
-                "1", "2", "3", "+",
-                "0", ".", "=", "" // Last empty string is filler if needed, handled in logic
+                "AC", "⌫", "√", "%",
+                "7", "8", "9", "÷",
+                "4", "5", "6", "×",
+                "1", "2", "3", "-",
+                "0", ".", "=", "+",
+                "^", "M+", "M-", "MR", "MC", "History"
             )
 
-            Row(modifier = Modifier.fillMaxWidth()) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    content = {
-                        items(buttons) { btn ->
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                content = {
+                    items(buttons) { btn ->
+                        if (btn.length <= 3 || btn == "History") {
                             CalculatorButton(
                                 symbol = btn,
                                 modifier = Modifier.aspectRatio(1f),
@@ -102,8 +167,16 @@ fun CalculatorScreen(
                             )
                         }
                     }
-                )
-            }
+                }
+            )
+        }
+        
+        // History Panel
+        if(state.showHistory) {
+            HistoryPanel(
+                history = state.history,
+                onDismiss = { onAction(CalculatorAction.ToggleHistory) }
+            )
         }
     }
 }
@@ -117,9 +190,16 @@ fun getActionFromSymbol(symbol: String): CalculatorAction? {
         "×" -> CalculatorAction.Operation(CalculatorOperation.Multiply)
         "-" -> CalculatorAction.Operation(CalculatorOperation.Subtract)
         "+" -> CalculatorAction.Operation(CalculatorOperation.Add)
+        "^" -> CalculatorAction.Power
         "=" -> CalculatorAction.Calculate
         "." -> CalculatorAction.Decimal
-        "" -> null // Spacer
+        "%" -> CalculatorAction.Percentage
+        "√" -> CalculatorAction.SquareRoot
+        "M+" -> CalculatorAction.MemoryAdd
+        "M-" -> CalculatorAction.MemorySubtract
+        "MR" -> CalculatorAction.MemoryRecall
+        "MC" -> CalculatorAction.MemoryClear
+        "History" -> CalculatorAction.ToggleHistory
         else -> if(symbol.toIntOrNull() != null) CalculatorAction.Number(symbol.toInt()) else null
     }
 }
@@ -131,22 +211,18 @@ fun CalculatorButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    if (symbol.isEmpty()) {
-        Box(modifier = modifier) // Empty spacer
-        return
-    }
-
     // Determine colors based on button type
     val containerColor = when(symbol) {
         "AC", "⌫" -> MaterialTheme.colorScheme.tertiaryContainer
-        "÷", "×", "-", "+" -> MaterialTheme.colorScheme.secondaryContainer
+        "÷", "×", "-", "+", "^" -> MaterialTheme.colorScheme.secondaryContainer
         "=" -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.surfaceVariant // Numbers
+        "%", "√", "M+", "M-", "MR", "MC", "History" -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.surfaceVariant // Numbers and decimal
     }
 
     val contentColor = when(symbol) {
         "AC", "⌫" -> MaterialTheme.colorScheme.onTertiaryContainer
-        "÷", "×", "-", "+" -> MaterialTheme.colorScheme.onSecondaryContainer
+        "÷", "×", "-", "+", "^" -> MaterialTheme.colorScheme.onSecondaryContainer
         "=" -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -154,15 +230,101 @@ fun CalculatorButton(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .clip(CircleShape) // Rounded corners (Circle for 1:1 aspect ratio)
+            .clip(CircleShape)
             .background(containerColor)
             .clickable { onClick() }
     ) {
         Text(
             text = symbol,
-            fontSize = 28.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Medium,
             color = contentColor
         )
+    }
+}
+
+// --- History Panel ---
+@Composable
+fun HistoryPanel(
+    history: List<String>,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.32f))
+            .clickable { onDismiss() }
+    ) {
+        Card(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .fillMaxWidth(0.7f)
+                .fillMaxHeight(0.8f)
+                .padding(16.dp)
+                .clickable(enabled = false) {},
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "History",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp),
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Text("×", fontSize = 20.sp)
+                    }
+                }
+                
+                if(history.isEmpty()) {
+                    Text(
+                        "No history yet",
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(top = 20.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(history.size) { index ->
+                            Text(
+                                text = history[index],
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Light
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
